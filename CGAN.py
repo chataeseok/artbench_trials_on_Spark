@@ -29,7 +29,7 @@ REFERRED TO
 import torch
 import torch.nn as nn
 from torchvision import transforms
-from torchvision.datasets import ImageFolder
+from torchvision.datasets import CIFAR10
 from typing import Union, Literal, Optional
 from pyspark.ml.torch.distributor import TorchDistributor
 from pyspark.sql import SparkSession
@@ -59,15 +59,11 @@ class D(nn.Module):
         初期化
         """
         super(D, self).__init__()
-        self.conv1 = nn.Conv2d(3, 6, kernel_size = 13, stride = 3, bias = False)
-        self.conv2 = nn.Conv2d(6, 9, kernel_size = 7, stride = 3, bias = False)
-        self.conv3 = nn.Conv2d(9, 12, kernel_size = 5, stride = 3, bias = False)
-        self.conv4 = nn.Conv2d(12, 15, kernel_size = 5, stride = 1, bias = False)
-        self.linear = nn.Linear(240, 1)
+        self.conv1 = nn.Conv2d(3, 6, kernel_size = 5, stride = 3, bias = False)
+        self.conv2 = nn.Conv2d(6, 16, kernel_size = 5, stride = 1, bias = False)
+        self.linear = nn.Linear(576, 1)
         self.norm1 = nn.BatchNorm2d(6)
-        self.norm2 = nn.BatchNorm2d(9)
-        self.norm3 = nn.BatchNorm2d(12)
-        self.norm4 = nn.BatchNorm2d(15)
+        self.norm2 = nn.BatchNorm2d(16)
         self.activation = nn.LeakyReLU(0.2)
         self.dropout = nn.Dropout(0.2)
 
@@ -76,11 +72,9 @@ class D(nn.Module):
         Forward propagation
         フォワード伝播
         """
-        output = self.dropout(self.activation(self.norm1(self.conv1(input))))#[batch_size, 6, 82, 82],82=(256-13)/3+1
-        output = self.dropout(self.activation(self.norm2(self.conv2(output))))#[batch_size, 9, 26, 26],26=(82-7)/3+1
-        output = self.dropout(self.activation(self.norm3(self.conv3(output))))#[batch_size, 12, 8, 8],8=(26-5)/3+1
-        output = self.dropout(self.activation(self.norm4(self.conv4(output))))#[batch_size, 15, 4, 4],4=(8-5)/1+1
-        output = output.reshape(-1, 240)#[batch_size, 240],240=15X4X4
+        output = self.dropout(self.activation(self.norm1(self.conv1(input))))#[batch_size, 6, 10, 10],10=(32-5)/3+1
+        output = self.dropout(self.activation(self.norm2(self.conv2(output))))#[batch_size, 16, 6, 6],6=(10-5)/1+1
+        output = output.reshape(-1, 576)#[batch_size, 576],576=16X6X6
         output = self.activation(self.linear(output)).reshape(-1)#[batch_size]
 
         return output
@@ -91,9 +85,9 @@ class D(nn.Module):
         モデル初期化
         """
         for name, layer in self._modules.items():
-            if name in ('conv1', 'conv2', 'conv3'):
+            if name == 'conv1':
                 nn.init.kaiming_normal_(layer.weight, mode = 'fan_in', nonlinearity = 'leaky_relu')
-            elif name == 'conv4':
+            elif name == 'conv2':
                 nn.init.kaiming_normal_(layer.weight, mode = 'fan_out', nonlinearity = 'leaky_relu')
             elif isinstance(layer, nn.BatchNorm2d):
                 nn.init.constant_(layer.weight, 1.)
@@ -134,16 +128,12 @@ class G(nn.Module):
         初期化
         """
         super(G, self).__init__()
-        self.t_conv1 = nn.ConvTranspose2d(15, 12, kernel_size = 5, stride = 1, bias = False)
-        self.t_conv2 = nn.ConvTranspose2d(12, 9, kernel_size = 5, stride = 3, bias = False)
-        self.t_conv3 = nn.ConvTranspose2d(9, 6, kernel_size = 7, stride = 3, bias = False)
-        self.t_conv4 = nn.ConvTranspose2d(6, 3, kernel_size = 13, stride = 3, bias = False)
-        self.linear = nn.Linear(100, 240)
+        self.t_conv1 = nn.ConvTranspose2d(16, 6, kernel_size = 5, stride = 1, bias = False)
+        self.t_conv2 = nn.ConvTranspose2d(6, 3, kernel_size = 5, stride = 3, bias = False)
+        self.linear = nn.Linear(100, 576)
         self.activation = nn.LeakyReLU(0.2)
-        self.norm1 = nn.BatchNorm2d(12)
-        self.norm2 = nn.BatchNorm2d(9)
-        self.norm3 = nn.BatchNorm2d(6)
-        self.norm4 = nn.BatchNorm2d(3)
+        self.norm1 = nn.BatchNorm2d(6)
+        self.norm2 = nn.BatchNorm2d(3)
         self.tanh = nn.Tanh()
 
     def forward(self, input: torch.Tensor):#[batch_size, 100]
@@ -151,13 +141,11 @@ class G(nn.Module):
         Forward propagation
         フォワード伝播
         """
-        output = self.activation(self.linear(input))#[batch_size, 240]
-        output = output.reshape(-1, 15, 4, 4)#[batch_size, 15, 4, 4]其中240=15X4X4
-        output = self.activation(self.norm1(self.t_conv1(output)))#[batch_size, 15, 8, 8]
-        output = self.activation(self.norm2(self.t_conv2(output)))#[batch_size, 9, 26, 26]
-        output = self.activation(self.norm3(self.t_conv3(output)))#[batch_size, 6, 82, 82]
-        output = self.activation(self.norm4(self.t_conv4(output)))#[batch_size, 3, 256, 256]
-        output = self.tanh(output)#[batch_size, 3, 256, 256]
+        output = self.activation(self.linear(input))#[batch_size, 576]
+        output = output.reshape(-1, 16, 6, 6)#[batch_size, 16, 6, 6]576=16X6X6
+        output = self.activation(self.norm1(self.t_conv1(output)))#[batch_size, 6, 10, 10]
+        output = self.activation(self.norm2(self.t_conv2(output)))#[batch_size, 3, 32, 32]
+        output = self.tanh(output)#[batch_size, 3, 32, 32]
 
         return output
 
@@ -167,9 +155,9 @@ class G(nn.Module):
         モデル初期化
         """
         for name, layer in self._modules.items():
-            if name in ('t_conv1', 't_conv2', 't_conv3'):
+            if name == 't_conv1':
                 nn.init.kaiming_normal_(layer.weight, mode = 'fan_in', nonlinearity = 'leaky_relu')
-            elif name == 't_conv4':
+            elif name == 't_conv2':
                 nn.init.kaiming_normal_(layer.weight, mode = 'fan_out', nonlinearity = 'leaky_relu')
             elif isinstance(layer, nn.BatchNorm2d):
                 nn.init.constant_(layer.weight, 1.)
@@ -198,6 +186,29 @@ class G(nn.Module):
         モデルパラメータの表示
         """
         return [(name, param) for name, param in self.named_parameters()]
+
+"""
+ArtBench-10 dataset
+ArtBench-10データセット
+"""
+class Artbench10(CIFAR10):
+    """
+    ArtBench-10 dataset
+    ArtBench-10データセット
+    """
+    base_folder = './artbench-10-batches-py'
+    filename = 'artbench-10-python.tar.gz'
+    tgz_md5 = 'b116ffdc5e07e162f119149c2ad7403f'
+    train_list = [['data_batch_1', 'c2e02a78dcea81fe6fead5f1540e542f'],
+                ['data_batch_2', '1102a4dcf41d4dd63e20c10691193448'],
+                ['data_batch_3', '177fc43579af15ecc80eb506953ec26f'],
+                ['data_batch_4', '566b2a02ccfbafa026fbb2bcec856ff6'],
+                ['data_batch_5', 'faa6a572469542010a1c8a2a9a7bf436'],]
+
+    test_list = [['test_batch', 'fa44530c8b8158467e00899609c19e52'],]
+    meta = {'filename': 'meta',
+            'key': 'styles',
+            'md5': '5bdcafa7398aa6b75d569baaec5cd4aa',}
 
 """
 Training assistance
@@ -276,7 +287,7 @@ Import data and preprocess data
 データのインポートと前処理データ
 """
 norm_trans = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])#normalize images
-trainset = ImageFolder('./artbench-10-imagefolder-split/train', transform = norm_trans)
+trainset = Artbench10('./artbench-10-batches-py', train = True, transform = norm_trans)
 
 def train(epochs_n: int = 100, g_learning_rate: float = 0.0001, d_learning_rate: float = 0.0001, shown_stride = 5):
     """
