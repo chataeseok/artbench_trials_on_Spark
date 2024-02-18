@@ -235,7 +235,7 @@ class GAN_training_dominator():
         self.train_loader = train_loader
         self.noise_len = noise_len
         self.device = device
-    '''-------------------------------------------------------------------------------------------'''
+
     def train(self, 
               g_optimizer, 
               d_optimizer, 
