@@ -96,21 +96,21 @@ class D(nn.Module):
                 nn.init.normal_(layer.weight, std = 0.01)
                 nn.init.normal_(layer.bias, std = 0.01)
 
-    def loadparam(self, path: str):
+    def load_params(self, path: str):
         """
         Load pre-saved model parameters
         ロード前に保存したモデルパラメータ
         """
         self.load_state_dict(torch.load(path, map_location = torch.device('cpu')))
 
-    def savemodel(self, path: str = './Discriminator.pth'):
+    def save_model(self, path: str = './Discriminator.pth'):
         """
         Save the trained model
         訓練されたモデルを保存する
         """
         torch.save(self.state_dict(), path)
 
-    def showparam(self):
+    def show_params(self):
         """
         Show model parameters
         モデルパラメータの表示
@@ -166,7 +166,7 @@ class G(nn.Module):
                 nn.init.normal_(layer.weight, std = 0.01)
                 nn.init.normal_(layer.bias, std = 0.01)
 
-    def loadparam(self, path: str):
+    def load_params(self, path: str):
         """
         Load pre-saved model parameters
         ロード前に保存したモデルパラメータ
